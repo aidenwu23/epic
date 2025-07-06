@@ -579,8 +579,20 @@ Volume createEightMModule(Detector& desc, moduleParamsStrct mod_params,
 
   int layer_num  = 0;
 
-  double slice_z = -length / 2 + mod_params.mod_MPThick +
-                   mod_params.mod_FWThick + (orientation == 1 ? 3.75 : 0.0); // Keeps track of layers' local z locations
+  double total_stack = 0.0;
+  for (int i = 0; i < (int)sl_params.size(); i++) {
+    total_stack += sl_params[i].slice_thick + sl_params[i].slice_offset;
+  }
+
+  double slice_z = 0;
+
+  // Mirroring the start and end points of the slices without changing the order in which they're built for orientation 1
+  if (orientation == 1) {
+    slice_z = -length / 2 + mod_params.mod_MPThick + mod_params.mod_FWThick
+              + (length - (mod_params.mod_BWThick + mod_params.mod_FWThick) - mod_params.mod_MPThick - total_stack);
+  } else {
+    slice_z = -length / 2 + mod_params.mod_MPThick + mod_params.mod_FWThick;
+  }
 
   // Looping through the number of repeated layers & slices in each section
   for (int i = 0; i < (int)sl_params.size(); i++) {
@@ -636,7 +648,7 @@ Volume createEightMModule(Detector& desc, moduleParamsStrct mod_params,
       if(orientation == 2){
         pvm = vol_mod.placeVolume(
           modFillAssembly, Transform3D(RotationZYX(0, 0, 0),
-                                       Position((mod_params.mod_notchDepth) / 2. - 0.5, 0., slice_z)));
+                                       Position(-(mod_params.mod_notchDepth) / 2., 0., slice_z)));
       } else {
         pvm = vol_mod.placeVolume(
           modFillAssembly, Transform3D(RotationZYX(0, 0, 0),
@@ -665,7 +677,7 @@ Volume createEightMModule(Detector& desc, moduleParamsStrct mod_params,
       if (orientation == 2){
         pvm = vol_mod.placeVolume(
           modScintAssembly, Transform3D(RotationZYX(0, 0, 0),
-                                        Position((mod_params.mod_notchDepth) / 2. - 0.5, 0, slice_z)));
+                                        Position(-(mod_params.mod_notchDepth) / 2., 0, slice_z)));
       } else {
         pvm = vol_mod.placeVolume(
           modScintAssembly, Transform3D(RotationZYX(0, 0, 0),
@@ -761,7 +773,7 @@ Volume createEightMModule(Detector& desc, moduleParamsStrct mod_params,
       vol_modPCB,
       Position(-(mod_params.mod_width - 2 * mod_params.mod_SWThick - mod_params.mod_notchDepth) /
                    2.,
-               0, z_offSetPCB + 1.268));
+               0, -z_offSetPCB));
   } else if (orientation == 2){
     pvm = vol_mod.placeVolume(
       vol_modPCB,
@@ -1391,6 +1403,7 @@ static Ref_t createDetector(Detector& desc, xml_h handle, SensitiveDetector sens
     }
 
     // Accounting for individual orientations
+    
     Volume eightMassembly = createEightMModule(desc, eightM_params, slice_Params, length, sens,
                                              renderComponents, allSensitive, false, pos8M[e].orientation);
 
