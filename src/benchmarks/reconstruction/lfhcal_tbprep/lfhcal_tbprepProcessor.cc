@@ -43,10 +43,9 @@ Notes/TODO
   - Current output file excludes RunNumber, Vov, Vop, TimeStamp because these are not available in simulation
   - fNanoSec in BeginRun is excluded because its equivalent branch in calibrated files is empty (leaving only fSec, which is simplified to BeginRun)
   - Meaning and usage of @size for Tiles remain unclear and are thus not included
-    - For now its likely equivalent to tower_LFHCAL_N, not confirmed
+    - For now, a likely equivalent would be cell_size
   - ROtype, triggerBit, and triggerPrimitive are currently placeholders, implemented as per Fredi's instructions
-  - Most lFHCal_tower code (from lfhcal_studies) are commented out but retained for potential future use
-  - The output file structure lacks an intermediate singular branch between the event tree and leaves, unsure if this is will cause issues
+  - The output file structure lacks an intermediate singular branch between the event tree and leaves, unsure if this is will cause significant issues
 */
 
 //******************************************************************************************//
@@ -96,8 +95,8 @@ void lfhcal_tbprepProcessor::Init() {
     eventID = 0;
     event_tree->Branch("EventID", &eventID, "EventID/I");
     // Placeholder for readout type (0=undef, 1=hgcroc, 2=caen)
-    readoutType = 0;
-    event_tree->Branch("ROtype", &readoutType, "ROtype/I");
+    t_tower_ROtype = new int[maxNTowers];
+    event_tree->Branch("ROtype", t_tower_ROtype, "ROtype/I");
     // Event timestamp branch (UNIX time in seconds)
     eventTime = 0;
     event_tree->Branch("BeginRun", &eventTime, "BeginRun/L");
@@ -107,37 +106,21 @@ void lfhcal_tbprepProcessor::Init() {
     event_tree->Branch("BeamPosX", &beamPosX, "BeamPosX/D");
     event_tree->Branch("BeamPosY", &beamPosY, "BeamPosY/D");
     // Placeholders for trigger bit and trigger primitive 
-    triggerBit = 0;
-    triggerPrimitive = 0;
-    event_tree->Branch("triggerBit", &triggerBit, "triggerBit/I");
-    event_tree->Branch("triggerPrimitive", &triggerPrimitive, "triggerPrimitive/I");
-    // Cell IDs
-    event_tree->Branch("tower_LFHCAL_N", &t_lFHCal_towers_N, "tower_LFHCAL_N/I"); // from lfhcal_studies
+    t_ltpr = new float[maxNTowers];
+    t_ltrbit = new unsigned char[maxNTowers];
+    event_tree->Branch("ltpr", t_ltpr, "ltpr/F");
+    event_tree->Branch("ltrbit", t_ltrbit, "ltrbit/b");
+    // Cell IDs (including size, raw cell ID, and converted cell ID)
+    event_tree->Branch("cell_size", &t_cell_size, "cell_size/I");
     t_cellID_TB = new uint64_t[maxNTowers];
     t_cellID = new uint64_t[maxNTowers];
-    event_tree->Branch("cellID", t_cellID, "cellID[tower_LFHCAL_N]/l");
-    event_tree->Branch("cellID_TB", t_cellID_TB, "cellID_TB[tower_LFHCAL_N]/l");
-
-    // lFHCal_towers taken from lfhcal_studies, kept for potential future use
-    /*
+    event_tree->Branch("cellID", t_cellID, "cellID[cell_size]/l");
+    event_tree->Branch("cellID_TB", t_cellID_TB, "cellID_TB[cell_size]/l");   
+    // Time and Energy
     t_lFHCal_towers_cellE      = new float[maxNTowers];
     t_lFHCal_towers_cellT      = new float[maxNTowers];
-    t_lFHCal_towers_cellIDx    = new short[maxNTowers];
-    t_lFHCal_towers_cellIDy    = new short[maxNTowers];
-    t_lFHCal_towers_cellIDz    = new short[maxNTowers];
-    t_lFHCal_towers_cellTrueID = new int[maxNTowers];
-
-    event_tree->Branch("tower_LFHCAL_E", t_lFHCal_towers_cellE, "tower_LFHCAL_E[tower_LFHCAL_N]/F");
-    event_tree->Branch("tower_LFHCAL_T", t_lFHCal_towers_cellT, "tower_LFHCAL_T[tower_LFHCAL_N]/F");
-    event_tree->Branch("tower_LFHCAL_ix", t_lFHCal_towers_cellIDx,
-                       "tower_LFHCAL_ix[tower_LFHCAL_N]/S");
-    event_tree->Branch("tower_LFHCAL_iy", t_lFHCal_towers_cellIDy,
-                       "tower_LFHCAL_iy[tower_LFHCAL_N]/S");
-    event_tree->Branch("tower_LFHCAL_iz", t_lFHCal_towers_cellIDz,
-                       "tower_LFHCAL_iz[tower_LFHCAL_N]/S");
-    event_tree->Branch("tower_LFHCAL_trueID", t_lFHCal_towers_cellTrueID,
-                       "tower_LFHCAL_trueID[tower_LFHCAL_N]/I");
-    */
+    event_tree->Branch("tower_LFHCAL_E", t_lFHCal_towers_cellE, "tower_LFHCAL_E[cell_size]/F");
+    event_tree->Branch("tower_LFHCAL_T", t_lFHCal_towers_cellT, "tower_LFHCAL_T[cell_size]/F"); 
   }
 
   std::cout << __PRETTY_FUNCTION__ << " " << __LINE__ << std::endl;
@@ -167,9 +150,9 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   // Set eventTime and eventID. ReadoutType, triggerBit, and triggerPrimitive are currently placeholders.
   eventTime = static_cast<long>(std::time(nullptr));
   eventID = static_cast<int>(event->GetEventNumber());
-  readoutType = 0;
-  triggerBit = 0;
-  triggerPrimitive = 0;
+  int tower_ROtype = 0; // Readout type: 0=Undef, 1=Hgcroc, 2=Caen
+  float ltpr = 0.0f;    // Local trigger primitive
+  unsigned char ltrbit = 0; // Local trigger bit
 
   // ===============================================================================================
   // process MC particles
@@ -182,17 +165,51 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   beamPosY = 0.0;
   auto pdgToName = [](int pdg) -> std::string {
     switch (pdg) {
+      // Common particles
       case 11: return "e-";
       case -11: return "e+";
+      case 12: return "nu_e";
+      case -12: return "anti-nu_e";
       case 13: return "mu-";
       case -13: return "mu+";
+      case 14: return "nu_mu";
+      case -14: return "anti-nu_mu";
+      case 15: return "tau-";
+      case -15: return "tau+";
+      case 16: return "nu_tau";
+      case -16: return "anti-nu_tau";
       case 22: return "gamma";
+      case 111: return "pi0";
       case 211: return "pi+";
       case -211: return "pi-";
-      case 2212: return "proton";
-      case -2212: return "anti-proton";
+      case 130: return "K0_L";
+      case 310: return "K0_S";
+      case 321: return "K+";
+      case -321: return "K-";
       case 2112: return "neutron";
       case -2112: return "anti-neutron";
+      case 2212: return "proton";
+      case -2212: return "anti-proton";
+      // Rarer baryons and hyperons
+      case 3122: return "Lambda";
+      case -3122: return "anti-Lambda";
+      case 3222: return "Sigma+";
+      case -3222: return "anti-Sigma+";
+      case 3212: return "Sigma0";
+      case -3212: return "anti-Sigma0";
+      case 3112: return "Sigma-";
+      case -3112: return "anti-Sigma-";
+      case 3322: return "Xi0";
+      case -3322: return "anti-Xi0";
+      case 3312: return "Xi-";
+      case -3312: return "anti-Xi-";
+      case 3334: return "Omega-";
+      case -3334: return "anti-Omega-";
+      // Nuclei and special cases
+      case 1000010020: return "deuteron";
+      case 1000010030: return "triton";
+      case 1000020030: return "He3";
+      case 1000020040: return "alpha";
       default: return "unknown/not added";
     }
   };
@@ -217,9 +234,6 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   std::vector<uint64_t> input_cellID;
   // process rec hits
   for (const auto caloHit : recHits) {
-    float x         = caloHit.getPosition().x / 10.;
-    float y         = caloHit.getPosition().y / 10.;
-    float z         = caloHit.getPosition().z / 10.;
     uint64_t cellID = caloHit.getCellID();
     float energy    = caloHit.getEnergy();
     float time      = caloHit.getTime();
@@ -236,14 +250,6 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
     }
     if (detector_passive > 0) {
       continue;
-    }
-
-    // calc cell IDs
-    long cellIDx = -1;
-    long cellIDy = -1;
-    if (isLFHCal) {
-      cellIDx = 54LL * 2 - detector_module_x * 2 + detector_layer_x;
-      cellIDy = 54LL * 2 - detector_module_y * 2 + detector_layer_y;
     }
 
     // Process test beam cell IDs
@@ -266,70 +272,55 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
     }
     if (!found) {
       towersStrct tempstructT;
-      // Kept for potential future use
+      // This cell ID is used for uniqueness checking
+      tempstructT.cellID  = cellID;
       tempstructT.energy  = energy;
       tempstructT.time    = time;
-      tempstructT.posx    = x;
-      tempstructT.posy    = y;
-      tempstructT.posz    = z;
-      tempstructT.cellID  = cellID;
-      tempstructT.cellIDx = cellIDx;
-      tempstructT.cellIDy = cellIDy;
       if (isLFHCal) {
         tempstructT.cellIDz = detector_layer_rz;
       }
-      tempstructT.tower_trueID = 0; //TODO how to get trueID?
+      // Set the placeholder variables in the struct
+      tempstructT.tower_ROtype = tower_ROtype;
+      tempstructT.ltpr = ltpr;
+      tempstructT.ltrbit = ltrbit;
       input_tower_recSav.push_back(tempstructT);
 
-      // Cell IDs
+      // This cell ID is used for cell ID mapping
       input_cellID_TB.push_back(cellID_TB);
       input_cellID.push_back(cellID);
     }
   }
+
   m_log->trace("LFHCal mod: nCaloHits rec {}", nCaloHitsRec);
   
   // ===============================================================================================
   // Write event tree & clean-up variables
   // ===============================================================================================
   if (enableTree) {
-    t_lFHCal_towers_N = (int)input_tower_recSav.size();
-    // See comment in Init
-    /*
+    t_cell_size = (int)input_tower_recSav.size();
+
     for (int iCell = 0; iCell < (int)input_tower_recSav.size(); iCell++) {
       t_lFHCal_towers_cellE[iCell]      = (float)input_tower_recSav.at(iCell).energy;
       t_lFHCal_towers_cellT[iCell]      = (float)input_tower_recSav.at(iCell).time;
-      t_lFHCal_towers_cellIDx[iCell]    = (short)input_tower_recSav.at(iCell).cellIDx;
-      t_lFHCal_towers_cellIDy[iCell]    = (short)input_tower_recSav.at(iCell).cellIDy;
-      t_lFHCal_towers_cellIDz[iCell]    = (short)input_tower_recSav.at(iCell).cellIDz;
-      t_lFHCal_towers_cellTrueID[iCell] = (int)input_tower_recSav.at(iCell).tower_trueID;
       t_cellID[iCell] = input_cellID.at(iCell);
       t_cellID_TB[iCell] = input_cellID_TB.at(iCell);
-    }
-    */
-    for (int iCell = 0; iCell < (int)input_tower_recSav.size(); iCell++) {
-      t_cellID[iCell] = input_cellID.at(iCell);
-      t_cellID_TB[iCell] = input_cellID_TB.at(iCell);
+      t_tower_ROtype[iCell] = input_tower_recSav.at(iCell).tower_ROtype;
+      t_ltpr[iCell] = input_tower_recSav.at(iCell).ltpr;
+      t_ltrbit[iCell] = input_tower_recSav.at(iCell).ltrbit;
     }
 
     event_tree->Fill();
 
-    t_lFHCal_towers_N = 0;
-    // See comment in Init
-    /*
+    t_cell_size = 0;
+
     for (Int_t itow = 0; itow < maxNTowers; itow++) {
       t_lFHCal_towers_cellE[itow]      = 0;
       t_lFHCal_towers_cellT[itow]      = 0;
-      t_lFHCal_towers_cellIDx[itow]    = 0;
-      t_lFHCal_towers_cellIDy[itow]    = 0;
-      t_lFHCal_towers_cellIDz[itow]    = 0;
-      t_lFHCal_towers_cellTrueID[itow] = 0;
       t_cellID[itow] = 0;
       t_cellID_TB[itow] = 0;
-    }
-    */
-    for (Int_t itow = 0; itow < maxNTowers; itow++) {
-      t_cellID[itow] = 0;
-      t_cellID_TB[itow] = 0;
+      t_tower_ROtype[itow] = 0;
+      t_ltpr[itow] = 0.0f;
+      t_ltrbit[itow] = 0;
     }
   }
 }
@@ -342,17 +333,13 @@ void lfhcal_tbprepProcessor::Finish() {
   // Do any final calculations here.
 
   if (enableTree) {
-    // See comment in Init
-    /*
     delete[] t_lFHCal_towers_cellE;
     delete[] t_lFHCal_towers_cellT;
-    delete[] t_lFHCal_towers_cellIDx;
-    delete[] t_lFHCal_towers_cellIDy;
-    delete[] t_lFHCal_towers_cellIDz;
-    delete[] t_lFHCal_towers_cellTrueID;
-    */
     delete[] t_cellID;
     delete[] t_cellID_TB;
+    delete[] t_tower_ROtype;
+    delete[] t_ltpr;
+    delete[] t_ltrbit;
   }
 }
 

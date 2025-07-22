@@ -33,25 +33,18 @@ public:
   TTree* event_tree;
   const int maxNTowers = 65000;
   static const int maxCells= 65000;
-  float t_lFHCal_cells_energy[maxCells];
   uint64_t t_lFHCal_cells_cellID[maxCells];
-  int t_lFHCal_cells_N;
-  short* t_lFHCal_towers_cellIDx;
-  short* t_lFHCal_towers_cellIDy;
-  short* t_lFHCal_towers_cellIDz;
+  float t_lFHCal_cells_energy[maxCells];
   float* t_lFHCal_towers_cellE;
   float* t_lFHCal_towers_cellT;
-  int* t_lFHCal_towers_cellTrueID;
 
-  // Used variables
-  int t_lFHCal_towers_N;
+  int t_cell_size;
 
   uint64_t* t_cellID_TB;
   uint64_t* t_cellID;
-
-  int triggerBit;
-  int triggerPrimitive;
-  int readoutType; // 0=undef, 1=hgcroc, 2=caen?
+  int* t_tower_ROtype;         // readout type
+  float* t_ltpr;               // trigger primitive
+  unsigned char* t_ltrbit;     // trigger bit
 
   double beamEnergy;
   int beamPDG;
