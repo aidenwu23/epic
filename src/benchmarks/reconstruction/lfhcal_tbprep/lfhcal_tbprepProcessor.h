@@ -53,7 +53,6 @@ public:
   double beamPosY;
   int eventID;
   long eventTime; // UNIX time in seconds
-  int tileSize; // TODO: what is this?
 
   // ReconstructCellID function declaration
   uint64_t ReconstructCellID(auto detector_module_x, auto detector_module_y,
