@@ -32,6 +32,8 @@
 #include <podio/RelationRange.h>
 #include <stdexcept>
 #include <vector>
+#include <string>
+#include <cstring>
 
 #include "clusterizer_MA.h"
 #include "services/geometry/dd4hep/DD4hep_service.h"
@@ -54,6 +56,14 @@
 // 4. Tree Structure:
 //    - The output file structure lacks an intermediate singular branch (typically same name as the tree) between the event
 //      tree and leaves, unsure if this will cause significant issues.
+// 
+// 5. BeamName:
+//    - BeamName is not included in the event structure in the clusterizer header file, strings seemed to cause some issues,
+//      unsure how to fix it.
+//
+// 6. For further reference, 
+//    - Structures from Event.h are defined as eventsStruct in clusterizer_MA.h
+//    - Structures from Tile.h are defined as towersStrct in clusterizer_MA.h
 
 //******************************************************************************************//
 // InitWithGlobalRootLock
@@ -156,8 +166,9 @@ void lfhcal_tbprepProcessor::Init() {
 //******************************************************************************************//
 void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event) {
   // Set eventTime and eventID. Readout Type, trigger bit, and trigger primitive are currently placeholders.
-  eventTime = static_cast<long>(std::time(nullptr));
-  eventID = static_cast<int>(event->GetEventNumber());
+  static eventsStruct tempstructE;
+  tempstructE.eventTime = static_cast<long>(std::time(nullptr));
+  tempstructE.eventID = static_cast<int>(event->GetEventNumber());
   int tower_ROtype = 0; 
   float ltpr = 0.0f;
   unsigned char ltrbit = 0; 
@@ -166,11 +177,11 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   // process MC particles
   // ===============================================================================================
   const auto& mcParticles = *(event->GetCollection<edm4hep::MCParticle>("MCParticles"));
-  beamEnergy = 0.0;
-  beamPDG = 0;
+  tempstructE.beamEnergy = 0.0;
+  tempstructE.beamPDG = 0;
   beamName = "unknown";
-  beamPosX = 0.0;
-  beamPosY = 0.0;
+  tempstructE.beamPosX = 0.0;
+  tempstructE.beamPosY = 0.0;
   auto pdgToName = [](int pdg) -> std::string {
     switch (pdg) {
       // Common particles
@@ -223,12 +234,12 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   };
   for (auto mcparticle : mcParticles) {
     if (mcparticle.getGeneratorStatus() != 1) continue;
-    beamEnergy = mcparticle.getEnergy();
-    beamPDG = mcparticle.getPDG();
-    beamName = pdgToName(beamPDG);
+    tempstructE.beamEnergy = mcparticle.getEnergy();
+    tempstructE.beamPDG = mcparticle.getPDG();
+    beamName = pdgToName(tempstructE.beamPDG);
     auto vertex = mcparticle.getVertex();
-    beamPosX = vertex.x;
-    beamPosY = vertex.y;
+    tempstructE.beamPosX = vertex.x;
+    tempstructE.beamPosY = vertex.y;
     break; 
   }
 
@@ -238,8 +249,6 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   const auto& recHits = *(event->GetCollection<edm4eic::CalorimeterHit>(nameRecHits));
   int nCaloHitsRec    = 0;
   std::vector<towersStrct> input_tower_recSav;
-  std::vector<uint64_t> input_cellID_TB;
-  std::vector<uint64_t> input_cellID;
   // process rec hits
   for (const auto caloHit : recHits) {
     uint64_t cellID = caloHit.getCellID();
@@ -280,22 +289,18 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
     }
     if (!found) {
       towersStrct tempstructT;
-      // This cell ID is used for uniqueness checking
       tempstructT.cellID  = cellID;
       tempstructT.energy  = energy;
       tempstructT.time    = time;
       if (isLFHCal) {
         tempstructT.cellIDz = detector_layer_rz;
+        tempstructT.cellID_TB = cellID_TB;
       }
       // Set the placeholder variables in the struct
       tempstructT.tower_ROtype = tower_ROtype;
       tempstructT.ltpr = ltpr;
       tempstructT.ltrbit = ltrbit;
       input_tower_recSav.push_back(tempstructT);
-
-      // This cell ID is used for cell ID mapping
-      input_cellID_TB.push_back(cellID_TB);
-      input_cellID.push_back(cellID);
     }
   }
 
@@ -310,8 +315,8 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
     for (int iCell = 0; iCell < (int)input_tower_recSav.size(); iCell++) {
       t_lFHCal_towers_cellE[iCell]      = (float)input_tower_recSav.at(iCell).energy;
       t_lFHCal_towers_cellT[iCell]      = (float)input_tower_recSav.at(iCell).time;
-      t_cellID[iCell] = input_cellID.at(iCell);
-      t_cellID_TB[iCell] = input_cellID_TB.at(iCell);
+      t_cellID[iCell] = input_tower_recSav.at(iCell).cellID;
+      t_cellID_TB[iCell] = input_tower_recSav.at(iCell).cellID_TB;
       t_tower_ROtype[iCell] = input_tower_recSav.at(iCell).tower_ROtype;
       t_ltpr[iCell] = input_tower_recSav.at(iCell).ltpr;
       t_ltrbit[iCell] = input_tower_recSav.at(iCell).ltrbit;

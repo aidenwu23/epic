@@ -6,12 +6,14 @@
 
 #include <vector>
 #include <TVector3.h>
+#include <string>
 
 struct towersStrct {
   towersStrct()
       : energy(0)
       , time(0)
       , cellID(0)
+      , cellID_TB(0)
       , cellIDz(-1)
       , tower_ROtype(-1)
       , ltpr(0.0)
@@ -19,8 +21,18 @@ struct towersStrct {
   float energy;
   float time;
   int cellID;
+  uint64_t cellID_TB;
   int cellIDz;
   int tower_ROtype;
   float ltpr;
   unsigned char ltrbit;
+};
+
+struct eventsStruct {
+  double beamEnergy;
+  int beamPDG;
+  int eventID;
+  long eventTime;
+  double beamPosX;
+  double beamPosY;
 };
