@@ -56,14 +56,10 @@
 // 4. Tree Structure:
 //    - The output file structure lacks an intermediate singular branch (typically same name as the tree) between the event
 //      tree and leaves, unsure if this will cause significant issues.
-// 
-// 5. BeamName:
-//    - BeamName is not included in the event structure in the clusterizer header file, strings seemed to cause some issues,
-//      unsure how to fix it.
 //
-// 6. For further reference, 
-//    - Structures from Event.h are defined as eventsStruct in clusterizer_MA.h
+// 5. For further reference, 
 //    - Structures from Tile.h are defined as towersStrct in clusterizer_MA.h
+//    - Structures from Event.h to be defined as eventsStruct in clusterizer_MA.h?
 
 //******************************************************************************************//
 // InitWithGlobalRootLock
@@ -166,22 +162,21 @@ void lfhcal_tbprepProcessor::Init() {
 //******************************************************************************************//
 void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event) {
   // Set eventTime and eventID. Readout Type, trigger bit, and trigger primitive are currently placeholders.
-  static eventsStruct tempstructE;
-  tempstructE.eventTime = static_cast<long>(std::time(nullptr));
-  tempstructE.eventID = static_cast<int>(event->GetEventNumber());
-  int tower_ROtype = 0; 
-  float ltpr = 0.0f;
-  unsigned char ltrbit = 0; 
+  eventTime = static_cast<long>(std::time(nullptr));
+  eventID = static_cast<int>(event->GetEventNumber());
+  int tower_ROtype = 0; // Readout type: 0=Undef, 1=Hgcroc, 2=Caen
+  float ltpr = 0.0f;    // Local trigger primitive
+  unsigned char ltrbit = 0; // Local trigger bit
 
   // ===============================================================================================
   // process MC particles
   // ===============================================================================================
   const auto& mcParticles = *(event->GetCollection<edm4hep::MCParticle>("MCParticles"));
-  tempstructE.beamEnergy = 0.0;
-  tempstructE.beamPDG = 0;
+  beamEnergy = 0.0;
+  beamPDG = 0;
   beamName = "unknown";
-  tempstructE.beamPosX = 0.0;
-  tempstructE.beamPosY = 0.0;
+  beamPosX = 0.0;
+  beamPosY = 0.0;
   auto pdgToName = [](int pdg) -> std::string {
     switch (pdg) {
       // Common particles
@@ -234,12 +229,12 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   };
   for (auto mcparticle : mcParticles) {
     if (mcparticle.getGeneratorStatus() != 1) continue;
-    tempstructE.beamEnergy = mcparticle.getEnergy();
-    tempstructE.beamPDG = mcparticle.getPDG();
-    beamName = pdgToName(tempstructE.beamPDG);
+    beamEnergy = mcparticle.getEnergy();
+    beamPDG = mcparticle.getPDG();
+    beamName = pdgToName(beamPDG);
     auto vertex = mcparticle.getVertex();
-    tempstructE.beamPosX = vertex.x;
-    tempstructE.beamPosY = vertex.y;
+    beamPosX = vertex.x;
+    beamPosY = vertex.y;
     break; 
   }
 

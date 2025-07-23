@@ -28,11 +28,3 @@ struct towersStrct {
   unsigned char ltrbit;
 };
 
-struct eventsStruct {
-  double beamEnergy;
-  int beamPDG;
-  int eventID;
-  long eventTime;
-  double beamPosX;
-  double beamPosY;
-};
