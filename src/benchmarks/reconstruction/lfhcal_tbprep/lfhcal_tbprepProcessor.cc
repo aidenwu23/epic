@@ -38,15 +38,22 @@
 #include "services/log/Log_service.h"
 #include "services/rootfile/RootFile_service.h"
 
-/* 
-Notes/TODO
-  - Current output file excludes RunNumber, Vov, Vop, TimeStamp because these are not available in simulation
-  - fNanoSec in BeginRun is excluded because its equivalent branch in calibrated files is empty (leaving only fSec, which is simplified to BeginRun)
-  - Meaning and usage of @size for Tiles remain unclear and are thus not included
-    - For now, a likely equivalent would be cell_size
-  - ROtype, triggerBit, and triggerPrimitive are currently placeholders, implemented as per Fredi's instructions
-  - The output file structure lacks an intermediate singular branch between the event tree and leaves, unsure if this is will cause significant issues
-*/
+// =================================
+// Notes & Implementation Details
+// =================================
+// 1. Event.h compatability:
+//    - Fields like RunNumber, Vov, Vop, TimeStamp are ommitted in the simulation, and therefore not in the processor
+//
+// 2. BeginRun timestamp:
+//    - fNanoSec field is excluded because it's empty in the calibrated files
+//    - Only the integer seconds field (fSec -> BeginRun) is retained.
+//
+// 3. Placeholder fields:
+//    - ROtype, Trigger Bit (ltpr), and Trigger Primitive (ltrbit) are placeholders for now as per Fredi's instructions
+//
+// 4. Tree Structure:
+//    - The output file structure lacks an intermediate singular branch (typically same name as the tree) between the event
+//      tree and leaves, unsure if this will cause significant issues.
 
 //******************************************************************************************//
 // InitWithGlobalRootLock
@@ -85,42 +92,43 @@ void lfhcal_tbprepProcessor::Init() {
     event_tree = new TTree("event_tree", "event_tree");
     event_tree->SetDirectory(m_dir_main);
 
-    // Beam energy and PDG
-    beamEnergy = 0.0;
-    beamPDG = 0;
+    // ===============================================================================================
+    // Event.h structures
+    // ===============================================================================================
+    beamEnergy                 = 0.0;                   // BeamEnergy (GeV)
+    beamPDG                    = 0;                     // BeamID, PDG code of the beam particle 
+    eventID                    = 0;                     // EventID
+    t_tower_ROtype             = new int[maxNTowers];   // ROtype, currently a place holder (0=Undef, 1=Hgcroc, 2=Caen)
+    eventTime                  = 0;                     // BeginRun? TimeStamp? (some sort of UNIX time in seconds)
+    beamPosX                   = 0.0;                   // BeamPosX (mm)
+    beamPosY                   = 0.0;                   // BeamPosY (mm)
+
     event_tree->Branch("BeamEnergy", &beamEnergy, "BeamEnergy/D");
     event_tree->Branch("BeamID", &beamPDG, "BeamID/I");
-    event_tree->Branch("BeamName", &beamName);
-    // Event ID branch
-    eventID = 0;
+    event_tree->Branch("BeamName", &beamName);          // BeamName, converted from PDG code
     event_tree->Branch("EventID", &eventID, "EventID/I");
-    // Placeholder for readout type (0=undef, 1=hgcroc, 2=caen)
-    t_tower_ROtype = new int[maxNTowers];
     event_tree->Branch("ROtype", t_tower_ROtype, "ROtype/I");
-    // Event timestamp branch (UNIX time in seconds)
-    eventTime = 0;
     event_tree->Branch("BeginRun", &eventTime, "BeginRun/L");
-    // Particle gun positions
-    beamPosX = 0.0;
-    beamPosY = 0.0;
     event_tree->Branch("BeamPosX", &beamPosX, "BeamPosX/D");
     event_tree->Branch("BeamPosY", &beamPosY, "BeamPosY/D");
-    // Placeholders for trigger bit and trigger primitive 
-    t_ltpr = new float[maxNTowers];
-    t_ltrbit = new unsigned char[maxNTowers];
-    event_tree->Branch("ltpr", t_ltpr, "ltpr/F");
-    event_tree->Branch("ltrbit", t_ltrbit, "ltrbit/b");
-    // Cell IDs (including size, raw cell ID, and converted cell ID)
-    event_tree->Branch("cell_size", &t_cell_size, "cell_size/I");
-    t_cellID_TB = new uint64_t[maxNTowers];
-    t_cellID = new uint64_t[maxNTowers];
+
+    // ===============================================================================================
+    // Tile.h structures
+    // ===============================================================================================
+    t_ltpr                     = new float[maxNTowers];           // Trigger primitive
+    t_ltrbit                   = new unsigned char[maxNTowers];   // Trigger bit
+    t_cellID                   = new uint64_t[maxNTowers];        // Unconverted cell IDs
+    t_cellID_TB                = new uint64_t[maxNTowers];        // Converted cell IDs
+    t_lFHCal_towers_cellE      = new float[maxNTowers];           // Energy (GeV)
+    t_lFHCal_towers_cellT      = new float[maxNTowers];           // Time (nanoseconds)
+
+    event_tree->Branch("cell_size", &t_cell_size, "cell_size/I"); // @size for Tiles?
+    event_tree->Branch("ltpr", t_ltpr, "ltpr[cell_size]/F");
+    event_tree->Branch("ltrbit", t_ltrbit, "ltrbit[cell_size]/b");
     event_tree->Branch("cellID", t_cellID, "cellID[cell_size]/l");
-    event_tree->Branch("cellID_TB", t_cellID_TB, "cellID_TB[cell_size]/l");   
-    // Time and Energy
-    t_lFHCal_towers_cellE      = new float[maxNTowers];
-    t_lFHCal_towers_cellT      = new float[maxNTowers];
-    event_tree->Branch("tower_LFHCAL_E", t_lFHCal_towers_cellE, "tower_LFHCAL_E[cell_size]/F");
-    event_tree->Branch("tower_LFHCAL_T", t_lFHCal_towers_cellT, "tower_LFHCAL_T[cell_size]/F"); 
+    event_tree->Branch("cellID_TB", t_cellID_TB, "cellID_TB[cell_size]/l");  
+    event_tree->Branch("tower_LFHCAL_E", t_lFHCal_towers_cellE, "tower_LFHCAL_E[cell_size]/F"); 
+    event_tree->Branch("tower_LFHCAL_T", t_lFHCal_towers_cellT, "tower_LFHCAL_T[cell_size]/F");  
   }
 
   std::cout << __PRETTY_FUNCTION__ << " " << __LINE__ << std::endl;
@@ -147,12 +155,12 @@ void lfhcal_tbprepProcessor::Init() {
 // ProcessSequential
 //******************************************************************************************//
 void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event) {
-  // Set eventTime and eventID. ReadoutType, triggerBit, and triggerPrimitive are currently placeholders.
+  // Set eventTime and eventID. Readout Type, trigger bit, and trigger primitive are currently placeholders.
   eventTime = static_cast<long>(std::time(nullptr));
   eventID = static_cast<int>(event->GetEventNumber());
-  int tower_ROtype = 0; // Readout type: 0=Undef, 1=Hgcroc, 2=Caen
-  float ltpr = 0.0f;    // Local trigger primitive
-  unsigned char ltrbit = 0; // Local trigger bit
+  int tower_ROtype = 0; 
+  float ltpr = 0.0f;
+  unsigned char ltrbit = 0; 
 
   // ===============================================================================================
   // process MC particles

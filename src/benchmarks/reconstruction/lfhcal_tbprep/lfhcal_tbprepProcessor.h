@@ -28,7 +28,7 @@ public:
   //     void FinishWithGlobalRootLock() override;
   TDirectory* m_dir_main;
   
-  // Simple event tree for per-event analysis, mostly unused
+  // Simple event tree for per-event analysis
   bool enableTree = true;
   TTree* event_tree;
   const int maxNTowers = 65000;
