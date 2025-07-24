@@ -40,9 +40,9 @@
 #include "services/log/Log_service.h"
 #include "services/rootfile/RootFile_service.h"
 
-// =================================
-// Notes & Implementation Details
-// =================================
+// ==========================================
+// Notes & Implementation Details - Aiden Wu
+// ==========================================
 // 1. Event.h compatability:
 //    - Fields like RunNumber, Vov, Vop, TimeStamp are ommitted in the simulation, and therefore not in the processor
 //
@@ -59,7 +59,7 @@
 //
 // 5. For further reference, 
 //    - Structures from Tile.h are defined as towersStrct in clusterizer_MA.h
-//    - Structures from Event.h to be defined as eventsStruct in clusterizer_MA.h?
+//    - Structures from Event.h to be defined as eventsStrct in clusterizer_MA.h except beamName 
 
 //******************************************************************************************//
 // InitWithGlobalRootLock
@@ -101,13 +101,13 @@ void lfhcal_tbprepProcessor::Init() {
     // ===============================================================================================
     // Event.h structures
     // ===============================================================================================
-    beamEnergy                 = 0.0;                   // BeamEnergy (GeV)
-    beamPDG                    = 0;                     // BeamID, PDG code of the beam particle 
-    eventID                    = 0;                     // EventID
-    t_tower_ROtype             = new int[maxNTowers];   // ROtype, currently a place holder (0=Undef, 1=Hgcroc, 2=Caen)
-    eventTime                  = 0;                     // BeginRun? TimeStamp? (some sort of UNIX time in seconds)
-    beamPosX                   = 0.0;                   // BeamPosX (mm)
-    beamPosY                   = 0.0;                   // BeamPosY (mm)
+    beamEnergy          = 0.0;                   // BeamEnergy (GeV)
+    beamPDG             = 0;                     // BeamID, PDG code of the beam particle 
+    eventID             = 0;                     // EventID
+    t_tower_ROtype      = new int[maxNTowers];   // ROtype, currently a place holder (0=Undef, 1=Hgcroc, 2=Caen)
+    eventTime           = 0;                     // BeginRun? TimeStamp? (some sort of UNIX time in seconds)
+    beamPosX            = 0.0;                   // BeamPosX (mm)
+    beamPosY            = 0.0;                   // BeamPosY (mm)
 
     event_tree->Branch("BeamEnergy", &beamEnergy, "BeamEnergy/D");
     event_tree->Branch("BeamID", &beamPDG, "BeamID/I");
@@ -162,21 +162,22 @@ void lfhcal_tbprepProcessor::Init() {
 //******************************************************************************************//
 void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event) {
   // Set eventTime and eventID. Readout Type, trigger bit, and trigger primitive are currently placeholders.
-  eventTime = static_cast<long>(std::time(nullptr));
-  eventID = static_cast<int>(event->GetEventNumber());
-  int tower_ROtype = 0; // Readout type: 0=Undef, 1=Hgcroc, 2=Caen
-  float ltpr = 0.0f;    // Local trigger primitive
-  unsigned char ltrbit = 0; // Local trigger bit
+  eventsStrct tempstructE;
+  tempstructE.eventTime  = static_cast<long>(std::time(nullptr));
+  tempstructE.eventID    = static_cast<int>(event->GetEventNumber());
+  int tower_ROtype       = 0;       // Readout type: 0=Undef, 1=Hgcroc, 2=Caen
+  float ltpr             = 0.0f;    // Trigger primitive
+  unsigned char ltrbit   = 0;       // Trigger bit
 
   // ===============================================================================================
   // process MC particles
   // ===============================================================================================
   const auto& mcParticles = *(event->GetCollection<edm4hep::MCParticle>("MCParticles"));
-  beamEnergy = 0.0;
-  beamPDG = 0;
-  beamName = "unknown";
-  beamPosX = 0.0;
-  beamPosY = 0.0;
+  tempstructE.beamEnergy  = 0.0;
+  tempstructE.beamPDG     = 0;
+  tempstructE.beamPosX    = 0.0;
+  tempstructE.beamPosY    = 0.0;
+  beamName                = "unknown";
   auto pdgToName = [](int pdg) -> std::string {
     switch (pdg) {
       // Common particles
@@ -229,14 +230,22 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
   };
   for (auto mcparticle : mcParticles) {
     if (mcparticle.getGeneratorStatus() != 1) continue;
-    beamEnergy = mcparticle.getEnergy();
-    beamPDG = mcparticle.getPDG();
-    beamName = pdgToName(beamPDG);
-    auto vertex = mcparticle.getVertex();
-    beamPosX = vertex.x;
-    beamPosY = vertex.y;
-    break; 
+    tempstructE.beamEnergy  = mcparticle.getEnergy();
+    tempstructE.beamPDG     = mcparticle.getPDG();
+    beamName                = pdgToName(tempstructE.beamPDG);
+    auto vertex             = mcparticle.getVertex();
+    tempstructE.beamPosX    = vertex.x;
+    tempstructE.beamPosY    = vertex.y;
+    break;
   }
+
+  // Copy event-level struct fields to output variables before filling tree, no vector needed because only one set of event level info per event
+  beamEnergy  = tempstructE.beamEnergy;
+  beamPDG     = tempstructE.beamPDG;
+  beamPosX    = tempstructE.beamPosX;
+  beamPosY    = tempstructE.beamPosY;
+  eventID     = tempstructE.eventID;
+  eventTime   = tempstructE.eventTime;
 
   // ===============================================================================================
   // read rec hits & fill structs
@@ -284,17 +293,17 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
     }
     if (!found) {
       towersStrct tempstructT;
-      tempstructT.cellID  = cellID;
-      tempstructT.energy  = energy;
-      tempstructT.time    = time;
+      tempstructT.cellID       = cellID;
+      tempstructT.energy       = energy;
+      tempstructT.time         = time;
       if (isLFHCal) {
-        tempstructT.cellIDz = detector_layer_rz;
-        tempstructT.cellID_TB = cellID_TB;
+        tempstructT.cellIDz    = detector_layer_rz;
+        tempstructT.cellID_TB  = cellID_TB;
       }
       // Set the placeholder variables in the struct
       tempstructT.tower_ROtype = tower_ROtype;
-      tempstructT.ltpr = ltpr;
-      tempstructT.ltrbit = ltrbit;
+      tempstructT.ltpr         = ltpr;
+      tempstructT.ltrbit       = ltrbit;
       input_tower_recSav.push_back(tempstructT);
     }
   }
@@ -310,11 +319,11 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
     for (int iCell = 0; iCell < (int)input_tower_recSav.size(); iCell++) {
       t_lFHCal_towers_cellE[iCell]      = (float)input_tower_recSav.at(iCell).energy;
       t_lFHCal_towers_cellT[iCell]      = (float)input_tower_recSav.at(iCell).time;
-      t_cellID[iCell] = input_tower_recSav.at(iCell).cellID;
-      t_cellID_TB[iCell] = input_tower_recSav.at(iCell).cellID_TB;
-      t_tower_ROtype[iCell] = input_tower_recSav.at(iCell).tower_ROtype;
-      t_ltpr[iCell] = input_tower_recSav.at(iCell).ltpr;
-      t_ltrbit[iCell] = input_tower_recSav.at(iCell).ltrbit;
+      t_cellID[iCell]                   = input_tower_recSav.at(iCell).cellID;
+      t_cellID_TB[iCell]                = input_tower_recSav.at(iCell).cellID_TB;
+      t_tower_ROtype[iCell]             = input_tower_recSav.at(iCell).tower_ROtype;
+      t_ltpr[iCell]                     = input_tower_recSav.at(iCell).ltpr;
+      t_ltrbit[iCell]                   = input_tower_recSav.at(iCell).ltrbit;
     }
 
     event_tree->Fill();
@@ -324,11 +333,11 @@ void lfhcal_tbprepProcessor::Process(const std::shared_ptr<const JEvent>& event)
     for (Int_t itow = 0; itow < maxNTowers; itow++) {
       t_lFHCal_towers_cellE[itow]      = 0;
       t_lFHCal_towers_cellT[itow]      = 0;
-      t_cellID[itow] = 0;
-      t_cellID_TB[itow] = 0;
-      t_tower_ROtype[itow] = 0;
-      t_ltpr[itow] = 0.0f;
-      t_ltrbit[itow] = 0;
+      t_cellID[itow]                   = 0;
+      t_cellID_TB[itow]                = 0;
+      t_tower_ROtype[itow]             = 0;
+      t_ltpr[itow]                     = 0.0f;
+      t_ltrbit[itow]                   = 0;
     }
   }
 }

@@ -28,3 +28,20 @@ struct towersStrct {
   unsigned char ltrbit;
 };
 
+// Event-level structure for event tree (excluding beamName)
+struct eventsStrct {
+  eventsStrct()
+    : beamEnergy(0)
+    , beamPDG(0)
+    , beamPosX(0)
+    , beamPosY(0)
+    , eventID(0)
+    , eventTime(0) {}
+  double beamEnergy;
+  int beamPDG;
+  double beamPosX;
+  double beamPosY;
+  int eventID;
+  long eventTime;
+};
+
