@@ -35,7 +35,7 @@
 #include <string>
 #include <cstring>
 
-#include "clusterizer_MA.h"
+#include "lfhcal_tbprepStrcts.h"
 #include "services/geometry/dd4hep/DD4hep_service.h"
 #include "services/log/Log_service.h"
 #include "services/rootfile/RootFile_service.h"
